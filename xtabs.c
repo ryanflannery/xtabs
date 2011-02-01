@@ -39,6 +39,7 @@ struct client_list_t {
    size_t   capacity;
    size_t   size;
    size_t   curr;
+   size_t   offset;
 };
 struct client_list_t client_list;
 
@@ -48,9 +49,11 @@ size_t client_list_add(xcb_window_t w);
 void   client_list_remove(xcb_window_t w);
 void   client_list_next(size_t n);
 void   client_list_prev(size_t n);
+void   client_list_update_offset();
 void   client_resize(size_t c);
 void   client_list_resize_all();
 void   client_focus(size_t c);
+void   client_get_xbounds(size_t c, int32_t *start, int32_t *end);
 
 /****************************************************************************/
 void xevent_recv_configure_notify(xcb_configure_notify_event_t *e);
@@ -276,7 +279,7 @@ x_get_strwidth(const char *s)
    int32_t w;
 
    reply = xcb_query_text_extents_reply(x.connection,
-         xcb_query_text_extents(x.connection, x.font, strlen(s), s),
+         xcb_query_text_extents(x.connection, x.font, strlen(s), (xcb_char2b_t*)s),
          NULL);
    if (!reply)
       errx(1, "xcb_query_text_extents failed");
@@ -301,6 +304,7 @@ client_list_init()
    client_list.capacity = init_size;
    client_list.size = 0;
    client_list.curr = 0;
+   client_list.offset = 0;
 }
 
 void
@@ -318,6 +322,7 @@ client_list_free()
    client_list.capacity = 0;
    client_list.size = 0;
    client_list.curr = 0;
+   client_list.offset = 0;
 }
 
 size_t
@@ -375,17 +380,42 @@ client_list_prev(size_t n)
 }
 
 void
+client_list_update_offset()
+{
+   int32_t start, end;
+
+   for (client_list.offset = 0; client_list.offset < client_list.size; client_list.offset++) {
+      client_get_xbounds(client_list.curr, &start, &end);
+      if (start >= 0 && end <= x.width)
+         break;
+   }
+}
+
+void
 client_focus(size_t c)
 {
-   size_t i;
+   int32_t start, end;
+   size_t  i;
+
    for (i = 0; i < client_list.size; i++) {
       if (client_list.clients[i].window == client_list.clients[c].window) {
          client_list.curr = i;
          xevent_send_raise(client_list.clients[i]);
          x_set_window_name(client_list.clients[i].name);
+         client_get_xbounds(i, &start, &end);
+         if (start < 0 || end > x.width)
+            client_list_update_offset();
+
          REDRAW = true;
       }
    }
+}
+
+void
+client_get_xbounds(size_t c, int32_t *start, int32_t *end)
+{
+   *start = (c - client_list.offset) * x.tab_width;
+   *end   = *start + x.tab_width;
 }
 
 void
@@ -519,8 +549,8 @@ xevent_recv_buttonpress(xcb_button_press_event_t *e)
    if (e->event_y > x.bar_height)
       return;
 
-   for (i = 0; i < (int16_t)client_list.size; i++) {
-      if (e->event_x < (i + 1) * (int16_t)x.tab_width) {
+   for (i = client_list.offset; i < (int16_t)client_list.size; i++) {
+      if (e->event_x < (i - (int)client_list.offset + 1) * (int)x.tab_width) {
          c = i;
          break;
       }
@@ -591,7 +621,7 @@ draw_bar()
 
    xcb_poly_fill_rectangle(x.connection, x.bar, x.gc_bar_norm_bg, 1, &whole_window);
 
-   for (i = 0; i < client_list.size; i++) {
+   for (i = client_list.offset; i < client_list.size && xoff <= x.width; i++) {
       gc_fg = i == client_list.curr ? x.gc_bar_curr_fg : x.gc_bar_norm_fg;
       gc_bg = i == client_list.curr ? x.gc_bar_curr_bg : x.gc_bar_norm_bg;
 
@@ -659,8 +689,8 @@ int main(void)
    signal(SIGQUIT, signal_handler);
 
    x_init();
-printf("%s\n", x.str_window);
    client_list_init();
+   printf("%s\n", x.str_window);
 
    REDRAW = true;
    while (!SIG_QUIT && (e = xcb_wait_for_event(x.connection))) {
