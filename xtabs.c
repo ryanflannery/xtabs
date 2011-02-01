@@ -1,4 +1,20 @@
 /*
+ * Copyright (c) 2011 Ryan Flannery <ryan.flannery@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+/*
  * TODO's
  * Major:
  *    1. cleanup client & event chunks
@@ -28,6 +44,7 @@ volatile sig_atomic_t SIG_QUIT = 0;
 void signal_handler(int);
 
 /****************************************************************************/
+
 typedef struct {
    char          *name;
    char          *command;
@@ -83,7 +100,7 @@ typedef struct {
    xcb_gcontext_t     gc_bar_curr_fg, gc_bar_curr_bg;
    xcb_gcontext_t     gc_bar_border;
 } xinfo;
-xinfo x;
+xinfo X;
 
 
 void     x_init();
@@ -106,23 +123,23 @@ x_init()
    char                   *font_name = "fixed";
 
    /* TODO */
-   x.width = 100;
-   x.height = 100;
-   x.tab_width = 100;
-   x.font_padding = 1;
+   X.width = 100;
+   X.height = 100;
+   X.tab_width = 100;
+   X.font_padding = 1;
 
    /* setup connection, screen, colormap */
-   x.connection = xcb_connect(NULL,NULL);
-   if (xcb_connection_has_error(x.connection))
+   X.connection = xcb_connect(NULL,NULL);
+   if (xcb_connection_has_error(X.connection))
       errx(1, "%s: failed to connect to display", __FUNCTION__);
 
-   x.screen = xcb_setup_roots_iterator( xcb_get_setup(x.connection) ).data;
-   x.colormap = x.screen->default_colormap;
+   X.screen = xcb_setup_roots_iterator( xcb_get_setup(X.connection) ).data;
+   X.colormap = X.screen->default_colormap;
 
    /* setup window and string-form of window-id */
-   x.window = xcb_generate_id(x.connection);
+   X.window = xcb_generate_id(X.connection);
    mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
-   values[0] = x.screen->white_pixel;
+   values[0] = X.screen->white_pixel;
    values[1] = XCB_EVENT_MASK_EXPOSURE
              | XCB_EVENT_MASK_KEY_PRESS
              | XCB_EVENT_MASK_BUTTON_PRESS
@@ -130,70 +147,70 @@ x_init()
              | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
              | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
 
-   xcb_create_window(x.connection, x.screen->root_depth,
-      x.window, x.screen->root,
-      0, 0, x.width, x.height, 1,
+   xcb_create_window(X.connection, X.screen->root_depth,
+      X.window, X.screen->root,
+      0, 0, X.width, X.height, 1,
       XCB_WINDOW_CLASS_INPUT_OUTPUT,
-      x.screen->root_visual,
+      X.screen->root_visual,
       mask, values);
 
-   if (asprintf(&x.str_window, "%d", x.window) == -1)
+   if (asprintf(&X.str_window, "%d", X.window) == -1)
       errx(1, "failed to asprintf(3) window id");
 
    /* load font */
-   x.font = xcb_generate_id(x.connection);
-   xcb_open_font(x.connection, x.font, strlen(font_name), font_name);
+   X.font = xcb_generate_id(X.connection);
+   xcb_open_font(X.connection, X.font, strlen(font_name), font_name);
 
-   font_reply = xcb_query_font_reply(x.connection,
-         xcb_query_font(x.connection, x.font),
+   font_reply = xcb_query_font_reply(X.connection,
+         xcb_query_font(X.connection, X.font),
          NULL);
-   x.font_ascent  = font_reply->font_ascent;
-   x.font_descent = font_reply->font_descent;
-   x.bar_height = 2 + x.font_ascent + x.font_descent + 2 * x.font_padding;
+   X.font_ascent  = font_reply->font_ascent;
+   X.font_descent = font_reply->font_descent;
+   X.bar_height = 2 + X.font_ascent + X.font_descent + 2 * X.font_padding;
 
    /* normal tab gc's */
-   x.gc_bar_norm_fg = xcb_generate_id(x.connection);
-   x.gc_bar_norm_bg = xcb_generate_id(x.connection);
-   x.gc_bar_norm_fg = x_load_gc("gray60", "gray9");
-   x.gc_bar_norm_bg = x_load_gc("gray9",  "gray9");
+   X.gc_bar_norm_fg = xcb_generate_id(X.connection);
+   X.gc_bar_norm_bg = xcb_generate_id(X.connection);
+   X.gc_bar_norm_fg = x_load_gc("gray60", "gray9");
+   X.gc_bar_norm_bg = x_load_gc("gray9",  "gray9");
 
    /* current tab gc's */
-   x.gc_bar_curr_fg = xcb_generate_id(x.connection);
-   x.gc_bar_curr_bg = xcb_generate_id(x.connection);
-   x.gc_bar_curr_fg = x_load_gc("red",   "black");
-   x.gc_bar_curr_bg = x_load_gc("black", "black");
+   X.gc_bar_curr_fg = xcb_generate_id(X.connection);
+   X.gc_bar_curr_bg = xcb_generate_id(X.connection);
+   X.gc_bar_curr_fg = x_load_gc("red",   "black");
+   X.gc_bar_curr_bg = x_load_gc("black", "black");
 
    /* border gc */
-   x.gc_bar_border = xcb_generate_id(x.connection);
-   x.gc_bar_border = x_load_gc("black", "black");
+   X.gc_bar_border = xcb_generate_id(X.connection);
+   X.gc_bar_border = x_load_gc("black", "black");
 
    /* bar & tab pixmap's */
-   x.bar = xcb_generate_id(x.connection);
-   x.tab = xcb_generate_id(x.connection);
+   X.bar = xcb_generate_id(X.connection);
+   X.tab = xcb_generate_id(X.connection);
 
-   xcb_create_pixmap(x.connection, x.screen->root_depth, x.bar,
-      x.window, x.width, x.bar_height);
-   xcb_create_pixmap(x.connection, x.screen->root_depth, x.tab,
-      x.window, x.tab_width, x.bar_height);
+   xcb_create_pixmap(X.connection, X.screen->root_depth, X.bar,
+      X.window, X.width, X.bar_height);
+   xcb_create_pixmap(X.connection, X.screen->root_depth, X.tab,
+      X.window, X.tab_width, X.bar_height);
 
-   xcb_map_window(x.connection, x.window);
-   xcb_flush(x.connection);
+   xcb_map_window(X.connection, X.window);
+   xcb_flush(X.connection);
 }
 
 void
 x_free()
 {
-   xcb_close_font(x.connection, x.font);
-   xcb_free_gc(x.connection, x.gc_bar_norm_fg);
-   xcb_free_gc(x.connection, x.gc_bar_norm_bg);
-   xcb_free_gc(x.connection, x.gc_bar_curr_fg);
-   xcb_free_gc(x.connection, x.gc_bar_curr_bg);
-   xcb_free_gc(x.connection, x.gc_bar_border);
-   xcb_free_pixmap(x.connection, x.bar);
-   xcb_free_pixmap(x.connection, x.tab);
-   xcb_destroy_window(x.connection, x.window);
-   xcb_disconnect(x.connection);
-   free(x.str_window);
+   xcb_close_font(X.connection, X.font);
+   xcb_free_gc(X.connection, X.gc_bar_norm_fg);
+   xcb_free_gc(X.connection, X.gc_bar_norm_bg);
+   xcb_free_gc(X.connection, X.gc_bar_curr_fg);
+   xcb_free_gc(X.connection, X.gc_bar_curr_bg);
+   xcb_free_gc(X.connection, X.gc_bar_border);
+   xcb_free_pixmap(X.connection, X.bar);
+   xcb_free_pixmap(X.connection, X.tab);
+   xcb_destroy_window(X.connection, X.window);
+   xcb_disconnect(X.connection);
+   free(X.str_window);
 }
 
 xcb_alloc_color_reply_t*
@@ -201,8 +218,8 @@ x_load_color(uint16_t r, uint16_t g, uint16_t b)
 {
    xcb_alloc_color_reply_t *c;
 
-   c = xcb_alloc_color_reply(x.connection,
-      xcb_alloc_color(x.connection, x.colormap, r, g, b),
+   c = xcb_alloc_color_reply(X.connection,
+      xcb_alloc_color(X.connection, X.colormap, r, g, b),
       NULL);
    if (!c)
       errx(1, "failed to load color (r,g,b) = (%d,%d,%d)", r, g, b);
@@ -215,8 +232,8 @@ x_load_strcolor(const char *name)
 {
    xcb_alloc_named_color_reply_t *c;
 
-   c = xcb_alloc_named_color_reply(x.connection,
-      xcb_alloc_named_color(x.connection, x.colormap, strlen(name), name),
+   c = xcb_alloc_named_color_reply(X.connection,
+      xcb_alloc_named_color(X.connection, X.colormap, strlen(name), name),
       NULL);
    if (!c)
       errx(1, "failed to parse color '%s'", name);
@@ -235,14 +252,14 @@ x_load_gc(const char *fg, const char *bg)
    color_fg = x_load_strcolor(fg);
    color_bg = x_load_strcolor(bg);
 
-   gc = xcb_generate_id(x.connection);
+   gc = xcb_generate_id(X.connection);
    mask = XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT | XCB_GC_GRAPHICS_EXPOSURES;
    values[0] = color_fg->pixel;
    values[1] = color_bg->pixel;
-   values[2] = x.font;
+   values[2] = X.font;
    values[3] = 0;
 
-   xcb_create_gc(x.connection, gc, x.screen->root, mask, values);
+   xcb_create_gc(X.connection, gc, X.screen->root, mask, values);
 
    free(color_fg);
    free(color_bg);
@@ -258,8 +275,8 @@ x_get_window_name(xcb_window_t w)
    xcb_generic_error_t *err;
    char *name;
 
-   c = xcb_get_text_property(x.connection, w, WM_NAME);
-   if (xcb_get_text_property_reply(x.connection, c, &reply, &err) == 0)
+   c = xcb_get_text_property(X.connection, w, WM_NAME);
+   if (xcb_get_text_property_reply(X.connection, c, &reply, &err) == 0)
       errx(1, "failed to get window property");
 
    name = strndup(reply.name, reply.name_len);
@@ -270,7 +287,7 @@ x_get_window_name(xcb_window_t w)
 void
 x_set_window_name(const char *name)
 {
-   xcb_set_wm_name(x.connection, x.window, STRING, strlen(name), name);
+   xcb_set_wm_name(X.connection, X.window, STRING, strlen(name), name);
 }
 
 char*
@@ -281,8 +298,8 @@ x_get_command(xcb_window_t w)
    xcb_generic_error_t *err;
    char *name;
 
-   c = xcb_get_text_property(x.connection, w, WM_COMMAND);
-   if (xcb_get_text_property_reply(x.connection, c, &reply, &err) == 0)
+   c = xcb_get_text_property(X.connection, w, WM_COMMAND);
+   if (xcb_get_text_property_reply(X.connection, c, &reply, &err) == 0)
       errx(1, "failed to get window property");
 
    name = strndup(reply.name, reply.name_len);
@@ -296,8 +313,8 @@ x_get_strwidth(const char *s)
    xcb_query_text_extents_reply_t *reply;
    int32_t w;
 
-   reply = xcb_query_text_extents_reply(x.connection,
-         xcb_query_text_extents(x.connection, x.font, strlen(s), (xcb_char2b_t*)s),
+   reply = xcb_query_text_extents_reply(X.connection,
+         xcb_query_text_extents(X.connection, X.font, strlen(s), (xcb_char2b_t*)s),
          NULL);
    if (!reply)
       errx(1, "xcb_query_text_extents failed");
@@ -335,7 +352,7 @@ client_list_free()
       free(client_list.clients[i].name);
    }
 
-   xcb_flush(x.connection);
+   xcb_flush(X.connection);
    free(client_list.clients);
    client_list.capacity = 0;
    client_list.size = 0;
@@ -404,7 +421,7 @@ client_list_update_offset()
 
    for (client_list.offset = 0; client_list.offset < client_list.size; client_list.offset++) {
       client_get_xbounds(client_list.curr, &start, &end);
-      if (start >= 0 && end <= x.width)
+      if (start >= 0 && end <= X.width)
          break;
    }
 }
@@ -421,7 +438,7 @@ client_focus(size_t c)
          xevent_send_raise(client_list.clients[i]);
          x_set_window_name(client_list.clients[i].name);
          client_get_xbounds(i, &start, &end);
-         if (start < 0 || end > x.width)
+         if (start < 0 || end > X.width)
             client_list_update_offset();
 
          REDRAW = true;
@@ -432,17 +449,17 @@ client_focus(size_t c)
 void
 client_get_xbounds(size_t c, int32_t *start, int32_t *end)
 {
-   *start = (c - client_list.offset) * x.tab_width;
-   *end   = *start + x.tab_width;
+   *start = (c - client_list.offset) * X.tab_width;
+   *end   = *start + X.tab_width;
 }
 
 void
 client_resize(size_t c)
 {
    uint16_t mask = XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
-   uint32_t values[2] = { x.width, x.height - x.bar_height };
+   uint32_t values[2] = { X.width, X.height - X.bar_height };
 
-   xcb_configure_window(x.connection, client_list.clients[c].window,
+   xcb_configure_window(X.connection, client_list.clients[c].window,
       mask, values);
    /* TODO: replace with call to xevent_send_configure_notify */
 }
@@ -464,7 +481,7 @@ void
 spawn()
 {
    const char *program = "/home/ryan/Downloads/vimprobable2/vimprobable/vimprobable2";
-   const char *argv[] = { program, "-e", x.str_window, NULL};
+   const char *argv[] = { program, "-e", X.str_window, NULL};
 
    switch (fork()) {
    case -1:
@@ -483,13 +500,13 @@ spawn()
 void
 xevent_recv_configure_notify(xcb_configure_notify_event_t *e)
 {
-   if (e->window == x.window) {
-      x.width  = e->width;
-      x.height = e->height;
+   if (e->window == X.window) {
+      X.width  = e->width;
+      X.height = e->height;
 
-      xcb_free_pixmap(x.connection, x.bar);
-      xcb_create_pixmap(x.connection, x.screen->root_depth, x.bar,
-         x.window, x.width, x.height);
+      xcb_free_pixmap(X.connection, X.bar);
+      xcb_create_pixmap(X.connection, X.screen->root_depth, X.bar,
+         X.window, X.width, X.height);
 
       client_list_resize_all();
       REDRAW = true;
@@ -501,14 +518,14 @@ xevent_send_raise(client c)
 {
    static const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
 
-   xcb_configure_window (x.connection, c.window, XCB_CONFIG_WINDOW_STACK_MODE,
+   xcb_configure_window (X.connection, c.window, XCB_CONFIG_WINDOW_STACK_MODE,
       values);
 }
 
 void
 xevent_send_kill(client c)
 {
-   xcb_kill_client(x.connection, c.window);
+   xcb_kill_client(X.connection, c.window);
 }
 
 void
@@ -518,11 +535,11 @@ xevent_recv_create_notify(xcb_create_notify_event_t *e)
    uint32_t values[1] = { XCB_EVENT_MASK_PROPERTY_CHANGE };
    size_t   c;
 
-   if (e->window != x.window) {
-      xcb_unmap_window(x.connection, e->window);
-      xcb_reparent_window(x.connection, e->window, x.window, 0, x.bar_height);
-      xcb_map_window(x.connection, e->window);
-      xcb_change_window_attributes(x.connection, e->window, mask, values);
+   if (e->window != X.window) {
+      xcb_unmap_window(X.connection, e->window);
+      xcb_reparent_window(X.connection, e->window, X.window, 0, X.bar_height);
+      xcb_map_window(X.connection, e->window);
+      xcb_change_window_attributes(X.connection, e->window, mask, values);
 
       c = client_list_add(e->window);
       client_resize(c);
@@ -542,7 +559,7 @@ xevent_recv_property_notify(xcb_property_notify_event_t *e)
 {
    size_t i, c = 0;
 
-   if (x.window == e->window || (e->atom != WM_NAME && e->atom != WM_COMMAND))
+   if (X.window == e->window || (e->atom != WM_NAME && e->atom != WM_COMMAND))
       return;
 
    for (i = 0; i < client_list.size; i++) {
@@ -568,11 +585,11 @@ xevent_recv_buttonpress(xcb_button_press_event_t *e)
    size_t c = 0;
    int16_t i;
 
-   if (e->event_y > x.bar_height)
+   if (e->event_y > X.bar_height)
       return;
 
    for (i = client_list.offset; i < (int16_t)client_list.size; i++) {
-      if (e->event_x < (i - (int)client_list.offset + 1) * (int)x.tab_width) {
+      if (e->event_x < (i - (int)client_list.offset + 1) * (int)X.tab_width) {
          c = i;
          break;
       }
@@ -632,8 +649,8 @@ xevent_recv_keypress(xcb_key_press_event_t *e)
 void
 draw_bar()
 {
-   xcb_rectangle_t whole_window = { 0, 0, x.width, x.height };
-   xcb_rectangle_t whole_tab = { 0, 0, x.tab_width, x.bar_height };
+   xcb_rectangle_t whole_window = { 0, 0, X.width, X.height };
+   xcb_rectangle_t whole_tab = { 0, 0, X.tab_width, X.bar_height };
    xcb_gcontext_t  gc_fg, gc_bg;
    xcb_point_t     p[2];
    int16_t         xoff = 0;
@@ -641,49 +658,49 @@ draw_bar()
    size_t          i;
    char           *num;
 
-   xcb_poly_fill_rectangle(x.connection, x.bar, x.gc_bar_norm_bg, 1, &whole_window);
+   xcb_poly_fill_rectangle(X.connection, X.bar, X.gc_bar_norm_bg, 1, &whole_window);
 
-   for (i = client_list.offset; i < client_list.size && xoff <= x.width; i++) {
-      gc_fg = i == client_list.curr ? x.gc_bar_curr_fg : x.gc_bar_norm_fg;
-      gc_bg = i == client_list.curr ? x.gc_bar_curr_bg : x.gc_bar_norm_bg;
+   for (i = client_list.offset; i < client_list.size && xoff <= X.width; i++) {
+      gc_fg = i == client_list.curr ? X.gc_bar_curr_fg : X.gc_bar_norm_fg;
+      gc_bg = i == client_list.curr ? X.gc_bar_curr_bg : X.gc_bar_norm_bg;
 
       if (asprintf(&num, "%zd: ", i) == -1)
          err(1, "asprintf(3) num failed");
 
       num_width = x_get_strwidth(num);
 
-      xcb_poly_fill_rectangle(x.connection, x.tab, gc_bg, 1, &whole_tab);
-      xcb_image_text_8(x.connection,
+      xcb_poly_fill_rectangle(X.connection, X.tab, gc_bg, 1, &whole_tab);
+      xcb_image_text_8(X.connection,
                        strlen(num),
-                       x.tab,
+                       X.tab,
                        gc_fg,
-                       x.font_padding + 1,
-                       x.bar_height - (x.font_descent + x.font_padding + 1),
+                       X.font_padding + 1,
+                       X.bar_height - (X.font_descent + X.font_padding + 1),
                        num);
-      xcb_image_text_8(x.connection,
+      xcb_image_text_8(X.connection,
                        strlen(client_list.clients[i].name),
-                       x.tab,
+                       X.tab,
                        gc_fg,
-                       x.font_padding + 1 + num_width,
-                       x.bar_height - (x.font_descent + x.font_padding + 1),
+                       X.font_padding + 1 + num_width,
+                       X.bar_height - (X.font_descent + X.font_padding + 1),
                        client_list.clients[i].name);
-      xcb_poly_rectangle(x.connection, x.tab, x.gc_bar_border, 1, &whole_tab);
-      xcb_copy_area(x.connection, x.tab, x.bar, x.gc_bar_norm_bg,
-         0, 0, xoff, 0, x.tab_width, x.bar_height);
+      xcb_poly_rectangle(X.connection, X.tab, X.gc_bar_border, 1, &whole_tab);
+      xcb_copy_area(X.connection, X.tab, X.bar, X.gc_bar_norm_bg,
+         0, 0, xoff, 0, X.tab_width, X.bar_height);
 
-      xoff += x.tab_width;
+      xoff += X.tab_width;
       free(num);
    }
 
    p[0].x = xoff;
    p[0].y = 0;
    p[1].x = xoff;
-   p[1].y = x.bar_height;
-   xcb_poly_line(x.connection, XCB_COORD_MODE_ORIGIN, x.bar, x.gc_bar_border,
+   p[1].y = X.bar_height;
+   xcb_poly_line(X.connection, XCB_COORD_MODE_ORIGIN, X.bar, X.gc_bar_border,
          2, p);
 
-   xcb_copy_area(x.connection, x.bar, x.window, x.gc_bar_norm_bg,
-      0, 0, 0, 0, x.width, x.height);
+   xcb_copy_area(X.connection, X.bar, X.window, X.gc_bar_norm_bg,
+      0, 0, 0, 0, X.width, X.height);
 }
 
 void
@@ -712,10 +729,10 @@ int main(void)
 
    x_init();
    client_list_init();
-   printf("%s\n", x.str_window);
+   printf("%s\n", X.str_window);
 
    REDRAW = true;
-   while (!SIG_QUIT && (e = xcb_wait_for_event(x.connection))) {
+   while (!SIG_QUIT && (e = xcb_wait_for_event(X.connection))) {
 
       switch (e->response_type & ~0x80) {
       case XCB_EXPOSE:
@@ -743,7 +760,7 @@ int main(void)
 
       if (REDRAW) {
          draw_bar();
-         xcb_flush(x.connection);
+         xcb_flush(X.connection);
          REDRAW = false;
       }
       free(e);
