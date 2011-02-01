@@ -1,9 +1,8 @@
 /*
  * TODO's
- * Somewhat minor:
- *    2. load fonts
  * Major:
  *    1. cleanup client & event chunks
+ *    1.1   -> split up into different files
  *    2. add sessions
  *    3. figure out xembed stuff
  *    4. create client api
@@ -31,6 +30,7 @@ void signal_handler(int);
 /****************************************************************************/
 typedef struct {
    char          *name;
+   char          *command;
    xcb_window_t   window;
 } client;
 
@@ -90,6 +90,7 @@ void     x_init();
 void     x_free();
 void     x_set_window_name(const char *name);
 char*    x_get_window_name(xcb_window_t w);
+char*    x_get_command(xcb_window_t w);
 int32_t  x_get_strwidth(const char *s);
 xcb_alloc_color_reply_t*       x_load_color(uint16_t r, uint16_t g, uint16_t b);
 xcb_alloc_named_color_reply_t* x_load_strcolor(const char *name);
@@ -270,6 +271,23 @@ void
 x_set_window_name(const char *name)
 {
    xcb_set_wm_name(x.connection, x.window, STRING, strlen(name), name);
+}
+
+char*
+x_get_command(xcb_window_t w)
+{
+   xcb_get_property_cookie_t c;
+   xcb_get_text_property_reply_t reply;
+   xcb_generic_error_t *err;
+   char *name;
+
+   c = xcb_get_text_property(x.connection, w, WM_COMMAND);
+   if (xcb_get_text_property_reply(x.connection, c, &reply, &err) == 0)
+      errx(1, "failed to get window property");
+
+   name = strndup(reply.name, reply.name_len);
+   xcb_get_text_property_reply_wipe(&reply);
+   return name;
 }
 
 int32_t
@@ -524,7 +542,7 @@ xevent_recv_property_notify(xcb_property_notify_event_t *e)
 {
    size_t i, c = 0;
 
-   if (x.window == e->window)
+   if (x.window == e->window || (e->atom != WM_NAME && e->atom != WM_COMMAND))
       return;
 
    for (i = 0; i < client_list.size; i++) {
@@ -532,12 +550,16 @@ xevent_recv_property_notify(xcb_property_notify_event_t *e)
          c = i;
    }
 
-   free(client_list.clients[c].name);
-   client_list.clients[c].name = x_get_window_name(e->window);
-   if (c == client_list.curr)
-      x_set_window_name(client_list.clients[c].name);
+   if (e->atom == WM_NAME) {
+      free(client_list.clients[c].name);
+      client_list.clients[c].name = x_get_window_name(e->window);
+      if (c == client_list.curr)
+         x_set_window_name(client_list.clients[c].name);
 
-   REDRAW = true;
+      REDRAW = true;
+   } else if (e->atom == WM_COMMAND) {
+printf("command: '%s'\n", x_get_command(e->window));fflush(stdout);
+   }
 }
 
 void
