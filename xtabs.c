@@ -20,9 +20,9 @@
  *    1. cleanup client & event chunks
  *    1.1   -> split up into different files
  *    2. add sessions
- *    3. figure out xembed stuff
- *    4. create client api
- *    5. FIGURE OUT XCB ERROR HANDLING! (and, of course, use it)
+ *    3. figure out xembed stuff (?)
+ *    4. create simple client api
+ *    5. FIGURE OUT XCB ERROR HANDLING!
  */
 
 #include <xcb/xcb.h>
