@@ -72,7 +72,7 @@ typedef struct {
    char              *str_window; /* string form of window id */
 
    uint16_t           width, height, bar_height, tab_width;
-   uint16_t           font_ascent, font_descent;
+   uint16_t           font_ascent, font_descent, font_padding;
    xcb_pixmap_t       bar;
    xcb_pixmap_t       tab;
    xcb_font_t         font;
@@ -84,10 +84,11 @@ typedef struct {
 xinfo x;
 
 
-void  x_init();
-void  x_free();
-char* x_get_window_name(xcb_window_t w);
-void  x_set_window_name(char *name);
+void     x_init();
+void     x_free();
+void     x_set_window_name(const char *name);
+char*    x_get_window_name(xcb_window_t w);
+int32_t  x_get_strwidth(const char *s);
 xcb_alloc_color_reply_t*       x_load_color(uint16_t r, uint16_t g, uint16_t b);
 xcb_alloc_named_color_reply_t* x_load_strcolor(const char *name);
 xcb_gcontext_t                 x_load_gc(const char *fg, const char *bg);
@@ -105,6 +106,7 @@ x_init()
    x.width = 100;
    x.height = 100;
    x.tab_width = 100;
+   x.font_padding = 1;
 
    /* setup connection, screen, colormap */
    x.connection = xcb_connect(NULL,NULL);
@@ -144,7 +146,7 @@ x_init()
          NULL);
    x.font_ascent  = font_reply->font_ascent;
    x.font_descent = font_reply->font_descent;
-   x.bar_height = x.font_ascent + x.font_descent;
+   x.bar_height = 2 + x.font_ascent + x.font_descent + 2 * x.font_padding;
 
    /* normal tab gc's */
    x.gc_bar_norm_fg = xcb_generate_id(x.connection);
@@ -263,9 +265,27 @@ x_get_window_name(xcb_window_t w)
 }
 
 void
-x_set_window_name(char *name)
+x_set_window_name(const char *name)
 {
    xcb_set_wm_name(x.connection, x.window, STRING, strlen(name), name);
+}
+
+int32_t
+x_get_strwidth(const char *s)
+{
+   xcb_query_text_extents_reply_t *reply;
+   int32_t w;
+
+   reply = xcb_query_text_extents_reply(x.connection,
+         xcb_query_text_extents(x.connection, x.font, strlen(s), s),
+         NULL);
+   if (!reply)
+      errx(1, "xcb_query_text_extents failed");
+
+   w = reply->overall_width;
+   free(reply);
+
+   return w;
 }
 
 
@@ -561,39 +581,50 @@ xevent_recv_keypress(xcb_key_press_event_t *e)
 void
 draw_bar()
 {
-   size_t i;
-   int16_t xoff = 0;
-   xcb_gcontext_t gc_fg, gc_bg;
-   xcb_rectangle_t r = { 0, 0, x.width, x.height };
-   xcb_point_t p[2];
+   xcb_rectangle_t whole_window = { 0, 0, x.width, x.height };
+   xcb_rectangle_t whole_tab = { 0, 0, x.tab_width, x.bar_height };
+   xcb_gcontext_t  gc_fg, gc_bg;
+   xcb_point_t     p[2];
+   int16_t         xoff = 0;
+   int32_t         num_width;
+   size_t          i;
+   char           *num;
 
-   xcb_poly_fill_rectangle(x.connection, x.bar, x.gc_bar_norm_bg, 1, &r);
+   xcb_poly_fill_rectangle(x.connection, x.bar, x.gc_bar_norm_bg, 1, &whole_window);
 
    for (i = 0; i < client_list.size; i++) {
       gc_fg = i == client_list.curr ? x.gc_bar_curr_fg : x.gc_bar_norm_fg;
       gc_bg = i == client_list.curr ? x.gc_bar_curr_bg : x.gc_bar_norm_bg;
 
-      r.x = 0;
-      r.y = 0;
-      r.width  = x.tab_width;
-      r.height = x.bar_height - 1;
+      if (asprintf(&num, "%zd: ", i) == -1)
+         err(1, "asprintf(3) num failed");
 
-      xcb_poly_fill_rectangle(x.connection, x.tab, gc_bg, 1, &r);
+      num_width = x_get_strwidth(num);
+
+      xcb_poly_fill_rectangle(x.connection, x.tab, gc_bg, 1, &whole_tab);
+
+      xcb_image_text_8(x.connection,
+                       strlen(num),
+                       x.tab,
+                       gc_fg,
+                       x.font_padding + 1,
+                       x.bar_height - (x.font_descent + x.font_padding + 1),
+                       num);
 
       xcb_image_text_8(x.connection,
                        strlen(client_list.clients[i].name),
                        x.tab,
                        gc_fg,
-                       2,
-                       x.bar_height - x.font_descent - 1,
+                       x.font_padding + 1 + num_width,
+                       x.bar_height - (x.font_descent + x.font_padding + 1),
                        client_list.clients[i].name);
 
-      xcb_poly_rectangle(x.connection, x.tab, x.gc_bar_border, 1, &r);
-
+      xcb_poly_rectangle(x.connection, x.tab, x.gc_bar_border, 1, &whole_tab);
       xcb_copy_area(x.connection, x.tab, x.bar, x.gc_bar_norm_bg,
          0, 0, xoff, 0, x.tab_width, x.bar_height);
 
       xoff += x.tab_width;
+      free(num);
    }
 
    p[0].x = xoff;
