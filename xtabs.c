@@ -26,7 +26,6 @@
 
 volatile sig_atomic_t REDRAW = false;
 volatile sig_atomic_t SIG_QUIT = 0;
-volatile sig_atomic_t SIG_CHLD = 0;
 void signal_handler(int);
 
 /****************************************************************************/
@@ -602,7 +601,6 @@ draw_bar()
       num_width = x_get_strwidth(num);
 
       xcb_poly_fill_rectangle(x.connection, x.tab, gc_bg, 1, &whole_tab);
-
       xcb_image_text_8(x.connection,
                        strlen(num),
                        x.tab,
@@ -610,7 +608,6 @@ draw_bar()
                        x.font_padding + 1,
                        x.bar_height - (x.font_descent + x.font_padding + 1),
                        num);
-
       xcb_image_text_8(x.connection,
                        strlen(client_list.clients[i].name),
                        x.tab,
@@ -618,7 +615,6 @@ draw_bar()
                        x.font_padding + 1 + num_width,
                        x.bar_height - (x.font_descent + x.font_padding + 1),
                        client_list.clients[i].name);
-
       xcb_poly_rectangle(x.connection, x.tab, x.gc_bar_border, 1, &whole_tab);
       xcb_copy_area(x.connection, x.tab, x.bar, x.gc_bar_norm_bg,
          0, 0, xoff, 0, x.tab_width, x.bar_height);
@@ -648,7 +644,7 @@ signal_handler(int sig)
       SIG_QUIT = 1;
       break;
    case SIGCHLD:
-      SIG_CHLD = 1;
+      while(0 < waitpid(-1, NULL, WNOHANG));
       break;
    }
 }
@@ -668,11 +664,6 @@ printf("%s\n", x.str_window);
 
    REDRAW = true;
    while (!SIG_QUIT && (e = xcb_wait_for_event(x.connection))) {
-
-      if (SIG_CHLD) {
-         while(0 < waitpid(-1, NULL, WNOHANG));
-         SIG_CHLD = 0;
-      }
 
       switch (e->response_type & ~0x80) {
       case XCB_EXPOSE:    /* draw or redraw the window */
