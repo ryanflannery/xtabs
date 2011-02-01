@@ -29,9 +29,9 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_atom.h>
 
-#include <sys/types.h> /* for fork */
-#include <sys/wait.h> /* for waitpid */
-#include <unistd.h> /* for fork */
+#include <sys/types.h>  /* for fork */
+#include <sys/wait.h>   /* for waitpid */
+#include <unistd.h>     /* for fork */
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -52,37 +52,45 @@ typedef struct {
 } client;
 
 struct client_list_t {
-   client  *clients;
+   client  *cs;
    size_t   capacity;
    size_t   size;
    size_t   curr;
    size_t   offset;
 };
-struct client_list_t client_list;
+struct client_list_t clients;
 
-void   client_list_init();
-void   client_list_free();
-size_t client_list_add(xcb_window_t w);
-void   client_list_remove(xcb_window_t w);
-void   client_list_next(size_t n);
-void   client_list_prev(size_t n);
-void   client_list_update_offset();
-void   client_resize(size_t c);
-void   client_list_resize_all();
-void   client_focus(size_t c);
-void   client_get_xbounds(size_t c, int32_t *start, int32_t *end);
+void    clients_init();
+void    clients_free();
+void    clients_update_offset();
+void    clients_resize_all();
+client* client_geti(size_t i);
+client* client_getw(xcb_window_t w);
+size_t  client_add(xcb_window_t w);
+void    client_remove(xcb_window_t w);
+void    client_next(size_t n);
+void    client_prev(size_t n);
+void    client_resize(size_t c);
+void    client_focus(size_t c);
+void    client_get_xbounds(size_t c, int32_t *start, int32_t *end);
+const char* client_get_name(client *c);
+const char* client_get_command(client *c);
 
 /****************************************************************************/
+
+void xevent_recv_buttonpress(xcb_button_press_event_t *e);
 void xevent_recv_configure_notify(xcb_configure_notify_event_t *e);
 void xevent_recv_create_notify(xcb_create_notify_event_t *e);
 void xevent_recv_destroy_notify(xcb_destroy_notify_event_t *e);
 void xevent_recv_keypress(xcb_key_press_event_t *e);
-void xevent_recv_buttonpress(xcb_button_press_event_t *e);
 void xevent_recv_property_notify(xcb_property_notify_event_t *e);
-void xevent_send_raise(client c);
-void xevent_send_kill(client c);
+
+void xevent_send_kill(xcb_window_t w);
+void xevent_send_raise(xcb_window_t w);
+void xevent_send_resize(xcb_window_t w);
 
 /****************************************************************************/
+
 typedef struct {
    xcb_connection_t  *connection;
    xcb_screen_t      *screen;
@@ -113,6 +121,7 @@ xcb_alloc_color_reply_t*       x_load_color(uint16_t r, uint16_t g, uint16_t b);
 xcb_alloc_named_color_reply_t* x_load_strcolor(const char *name);
 xcb_gcontext_t                 x_load_gc(const char *fg, const char *bg);
 
+/****************************************************************************/
 
 void
 x_init()
@@ -122,7 +131,7 @@ x_init()
    uint32_t                values[2];
    char                   *font_name = "fixed";
 
-   /* TODO */
+   /* TODO Eventually these will be settings & storable */
    X.width = 100;
    X.height = 100;
    X.tab_width = 100;
@@ -287,12 +296,21 @@ x_get_window_name(xcb_window_t w)
 void
 x_set_window_name(const char *name)
 {
-   xcb_set_wm_name(X.connection, X.window, STRING, strlen(name), name);
+   const char *def = "(no-name)";
+
+   if (name == NULL)
+      xcb_set_wm_name(X.connection, X.window, STRING, strlen(def), def);
+   else
+      xcb_set_wm_name(X.connection, X.window, STRING, strlen(name), name);
 }
 
 char*
 x_get_command(xcb_window_t w)
 {
+   /* TODO This isn't working.  WM_COMMAND is stored as a list-o-strings.
+    * Can't figure out with xcb how to get access to these.... (the below
+    * only gives the first string, argv[0]).
+    */
    xcb_get_property_cookie_t c;
    xcb_get_text_property_reply_t reply;
    xcb_generic_error_t *err;
@@ -329,147 +347,190 @@ x_get_strwidth(const char *s)
 /****************************************************************************/
 
 void
-client_list_init()
+clients_init()
 {
    static const size_t init_size = 100;
 
-   if ((client_list.clients = calloc(init_size, sizeof(client))) == NULL)
+   if ((clients.cs = calloc(init_size, sizeof(client))) == NULL)
       err(1, "%s: calloc(3) failed", __FUNCTION__);
 
-   client_list.capacity = init_size;
-   client_list.size = 0;
-   client_list.curr = 0;
-   client_list.offset = 0;
+   clients.capacity = init_size;
+   clients.size = 0;
+   clients.curr = 0;
+   clients.offset = 0;
 }
 
 void
-client_list_free()
+clients_free()
 {
-   size_t i;
+   size_t  i;
+   client *c;
 
-   for (i = 0; i < client_list.size; i++) {
-      xevent_send_kill(client_list.clients[i]);
-      free(client_list.clients[i].name);
+   for (i = 0; i < clients.size; i++) {
+      c = client_geti(i);
+      xevent_send_kill(c->window);
+      if (c->name != NULL) free(c->name);
+      if (c->name != NULL) free(c->command);
    }
 
    xcb_flush(X.connection);
-   free(client_list.clients);
-   client_list.capacity = 0;
-   client_list.size = 0;
-   client_list.curr = 0;
-   client_list.offset = 0;
-}
-
-size_t
-client_list_add(xcb_window_t w)
-{
-   client_list.clients[client_list.size].name = x_get_window_name(w);
-   client_list.clients[client_list.size].window = w;
-   client_list.size++;
-   client_focus(client_list.size - 1);
-   return client_list.size - 1;
+   free(clients.cs);
+   clients.capacity = 0;
+   clients.size = 0;
+   clients.curr = 0;
+   clients.offset = 0;
 }
 
 void
-client_list_remove(xcb_window_t w)
-{
-   size_t i, c = client_list.size;
-   for (i = 0; i < client_list.size; i++) {
-      if (client_list.clients[i].window == w)
-         c = i;
-   }
-
-   if (c == client_list.size)
-      errx(1, "out-o-bounds in remove");
-
-   for (i = c; i < client_list.size; i++) {
-      client_list.clients[i] = client_list.clients[i+1];
-   }
-   client_list.size--;
-
-   if (c == client_list.curr && c > 0) {
-      client_list.curr--;
-      client_focus(client_list.curr);
-   }
-
-}
-
-void
-client_list_next(size_t n)
-{
-   client_list.curr += n;
-   client_list.curr %= client_list.size;
-   client_focus(client_list.curr);
-}
-
-void
-client_list_prev(size_t n)
-{
-   n %= client_list.size;
-   if (n <= client_list.curr)
-      client_list.curr -= n;
-   else
-      client_list.curr = client_list.size - n + client_list.curr;
-
-   client_focus(client_list.curr);
-}
-
-void
-client_list_update_offset()
+clients_update_offset()
 {
    int32_t start, end;
 
-   for (client_list.offset = 0; client_list.offset < client_list.size; client_list.offset++) {
-      client_get_xbounds(client_list.curr, &start, &end);
+   for (clients.offset = 0;
+        clients.offset < clients.size;
+        clients.offset++) {
+      client_get_xbounds(clients.curr, &start, &end);
       if (start >= 0 && end <= X.width)
-         break;
+         return;
    }
+}
+
+void
+clients_resize_all()
+{
+   size_t i;
+   for (i = 0; i < clients.size; i++)
+      client_resize(i);
+}
+
+client*
+client_geti(size_t i)
+{
+   if (i >= clients.size)
+      errx(1, "%s: out-of-bounds (%zd,%zd).", __FUNCTION__, i, clients.size);
+
+   return &(clients.cs[i]);
+}
+
+client*
+client_getw(xcb_window_t w)
+{
+   size_t i;
+   for (i = 0; i < clients.size; i++) {
+      if (client_geti(i)->window == w)
+         return client_geti(i);
+   }
+   errx(1, "%s: window not found.", __FUNCTION__);
+}
+
+const char *
+client_get_name(client *c)
+{
+   static const char *def = "(no-name)";
+   if (c->name == NULL)
+      return def;
+   else
+      return c->name;
+}
+
+const char *
+client_get_command(client *c)
+{
+   return c->command;
+}
+
+size_t
+client_add(xcb_window_t w)
+{
+   size_t  new_capacity;
+   client *new_list;
+   client *c;
+
+   if (clients.size == clients.capacity) {
+      new_capacity = clients.capacity + 50;
+      if ((new_list = realloc(clients.cs, new_capacity)) == NULL)
+         err(1, "%s: reallocation failed (%zd).", __FUNCTION__, new_capacity);
+      clients.capacity = new_capacity;
+   }
+
+   c = client_geti(clients.size++);
+   c->window  = w;
+   c->name    = NULL;
+   c->command = NULL;
+   client_focus(clients.size - 1);
+   return clients.size - 1;
+}
+
+void
+client_remove(xcb_window_t w)
+{
+   size_t i, c = clients.size;
+   for (i = 0; i < clients.size; i++) {
+      if (client_geti(i)->window == w)
+         c = i;
+   }
+
+   if (c == clients.size)
+      errx(1, "out-o-bounds in remove");
+
+   for (i = c; i < clients.size; i++) {
+      clients.cs[i] = clients.cs[i+1];
+   }
+   clients.size--;
+
+   if (c == clients.curr && c > 0) {
+      clients.curr--;
+      client_focus(clients.curr);
+   }
+
+}
+
+void
+client_next(size_t n)
+{
+   clients.curr += n;
+   clients.curr %= clients.size;
+   client_focus(clients.curr);
+}
+
+void
+client_prev(size_t n)
+{
+   n %= clients.size;
+   if (n <= clients.curr)
+      clients.curr -= n;
+   else
+      clients.curr = clients.size - n + clients.curr;
+
+   client_focus(clients.curr);
+}
+
+void
+client_resize(size_t c)
+{
+   xevent_send_resize(client_geti(c)->window);
 }
 
 void
 client_focus(size_t c)
 {
    int32_t start, end;
-   size_t  i;
 
-   for (i = 0; i < client_list.size; i++) {
-      if (client_list.clients[i].window == client_list.clients[c].window) {
-         client_list.curr = i;
-         xevent_send_raise(client_list.clients[i]);
-         x_set_window_name(client_list.clients[i].name);
-         client_get_xbounds(i, &start, &end);
-         if (start < 0 || end > X.width)
-            client_list_update_offset();
+   xevent_send_raise(client_geti(c)->window);
+   x_set_window_name(client_geti(c)->name);
+   client_get_xbounds(c, &start, &end);
+   clients.curr = c;
+   if (start < 0 || end > X.width)
+      clients_update_offset();
 
-         REDRAW = true;
-      }
-   }
+   REDRAW = true;
 }
 
 void
 client_get_xbounds(size_t c, int32_t *start, int32_t *end)
 {
-   *start = (c - client_list.offset) * X.tab_width;
+   *start = (c - clients.offset) * X.tab_width;
    *end   = *start + X.tab_width;
-}
-
-void
-client_resize(size_t c)
-{
-   uint16_t mask = XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
-   uint32_t values[2] = { X.width, X.height - X.bar_height };
-
-   xcb_configure_window(X.connection, client_list.clients[c].window,
-      mask, values);
-   /* TODO: replace with call to xevent_send_configure_notify */
-}
-
-void
-client_list_resize_all()
-{
-   size_t i;
-   for (i = 0; i < client_list.size; i++)
-      client_resize(i);
 }
 
 
@@ -496,6 +557,27 @@ spawn()
 
 /****************************************************************************/
 
+void
+xevent_recv_buttonpress(xcb_button_press_event_t *e)
+{
+   size_t c = 0;
+   int16_t i;
+
+   if (e->event_y > X.bar_height)
+      return;
+
+   for (i = clients.offset; i < (int16_t)clients.size; i++) {
+      if (e->event_x < (i - (int)clients.offset + 1) * (int)X.tab_width) {
+         c = i;
+         break;
+      }
+   }
+
+   client_focus(c);
+   /* TODO: figure out why e->state is always 0.
+    * TODO: eventually, right-click should close a window.
+    */
+}
 
 void
 xevent_recv_configure_notify(xcb_configure_notify_event_t *e)
@@ -508,24 +590,9 @@ xevent_recv_configure_notify(xcb_configure_notify_event_t *e)
       xcb_create_pixmap(X.connection, X.screen->root_depth, X.bar,
          X.window, X.width, X.height);
 
-      client_list_resize_all();
+      clients_resize_all();
       REDRAW = true;
    }
-}
-
-void
-xevent_send_raise(client c)
-{
-   static const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
-
-   xcb_configure_window (X.connection, c.window, XCB_CONFIG_WINDOW_STACK_MODE,
-      values);
-}
-
-void
-xevent_send_kill(client c)
-{
-   xcb_kill_client(X.connection, c.window);
 }
 
 void
@@ -541,7 +608,7 @@ xevent_recv_create_notify(xcb_create_notify_event_t *e)
       xcb_map_window(X.connection, e->window);
       xcb_change_window_attributes(X.connection, e->window, mask, values);
 
-      c = client_list_add(e->window);
+      c = client_add(e->window);
       client_resize(c);
       REDRAW = true;
    }
@@ -550,61 +617,14 @@ xevent_recv_create_notify(xcb_create_notify_event_t *e)
 void
 xevent_recv_destroy_notify(xcb_destroy_notify_event_t *e)
 {
-   client_list_remove(e->window);
+   client_remove(e->window);
    REDRAW = true;
-}
-
-void
-xevent_recv_property_notify(xcb_property_notify_event_t *e)
-{
-   size_t i, c = 0;
-
-   if (X.window == e->window || (e->atom != WM_NAME && e->atom != WM_COMMAND))
-      return;
-
-   for (i = 0; i < client_list.size; i++) {
-      if (client_list.clients[i].window == e->window)
-         c = i;
-   }
-
-   if (e->atom == WM_NAME) {
-      free(client_list.clients[c].name);
-      client_list.clients[c].name = x_get_window_name(e->window);
-      if (c == client_list.curr)
-         x_set_window_name(client_list.clients[c].name);
-
-      REDRAW = true;
-   } else if (e->atom == WM_COMMAND) {
-printf("command: '%s'\n", x_get_command(e->window));fflush(stdout);
-   }
-}
-
-void
-xevent_recv_buttonpress(xcb_button_press_event_t *e)
-{
-   size_t c = 0;
-   int16_t i;
-
-   if (e->event_y > X.bar_height)
-      return;
-
-   for (i = client_list.offset; i < (int16_t)client_list.size; i++) {
-      if (e->event_x < (i - (int)client_list.offset + 1) * (int)X.tab_width) {
-         c = i;
-         break;
-      }
-   }
-
-   client_focus(c);
-   /* TODO: figure out why e->state is always 0.
-    * TODO: eventually, right-click should close a window.
-    */
 }
 
 void
 xevent_recv_keypress(xcb_key_press_event_t *e)
 {
-   /* XXX BEGIN DIAGNOSTIC STUFF */
+   /* TODO Still need to figure out keysym's in xcb. */
    const char *MODIFIERS[] = {
       "Shift", "Lock", "Ctrl", "Alt",
       "Mod2", "Mod3", "Mod4", "Mod5",
@@ -620,18 +640,18 @@ xevent_recv_keypress(xcb_key_press_event_t *e)
       }
    }
    printf ("\n");
-   /* XXX END DIAGNOSTIC STUFF */
+   /* XXX end test code */
 
 
    switch (e->detail) {
    case 43: /* 'h' */
    case 44: /* 'j' */
-      client_list_prev(1);
+      client_prev(1);
       REDRAW = true;
       break;
    case 45: /* 'k' */
    case 46: /* 'l' */
-      client_list_next(1);
+      client_next(1);
       REDRAW = true;
       break;
    case 53: /* 'x' */
@@ -643,12 +663,63 @@ xevent_recv_keypress(xcb_key_press_event_t *e)
    }
 }
 
+void
+xevent_recv_property_notify(xcb_property_notify_event_t *e)
+{
+   size_t i, c = 0;
+
+   if (X.window == e->window || (e->atom != WM_NAME && e->atom != WM_COMMAND))
+      return;
+
+   for (i = 0; i < clients.size; i++) {
+      if (client_geti(i)->window == e->window)
+         c = i;
+   }
+
+   if (e->atom == WM_NAME) {
+      free(clients.cs[c].name);
+      clients.cs[c].name = x_get_window_name(e->window);
+      if (c == clients.curr)
+         x_set_window_name(clients.cs[c].name);
+
+      REDRAW = true;
+   } else if (e->atom == WM_COMMAND) {
+      /* TODO how the heck does xcb handle these?? */
+      printf("command: '%s'\n", x_get_command(e->window));fflush(stdout);
+   }
+}
+
+void
+xevent_send_kill(xcb_window_t w)
+{
+   xcb_kill_client(X.connection, w);
+}
+
+void
+xevent_send_raise(xcb_window_t w)
+{
+   static const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+
+   xcb_configure_window (X.connection, w, XCB_CONFIG_WINDOW_STACK_MODE,
+         values);
+}
+
+void
+xevent_send_resize(xcb_window_t w)
+{
+   uint16_t mask = XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
+   uint32_t values[2] = { X.width, X.height - X.bar_height };
+
+   xcb_configure_window(X.connection, w, mask, values);
+}
+
 
 /****************************************************************************/
 
 void
 draw_bar()
 {
+   /* TODO replace asprintf with snpritnf to a fixed pad */
    xcb_rectangle_t whole_window = { 0, 0, X.width, X.height };
    xcb_rectangle_t whole_tab = { 0, 0, X.tab_width, X.bar_height };
    xcb_gcontext_t  gc_fg, gc_bg;
@@ -656,16 +727,18 @@ draw_bar()
    int16_t         xoff = 0;
    int32_t         num_width;
    size_t          i;
+   client         *c;
    char           *num;
 
    xcb_poly_fill_rectangle(X.connection, X.bar, X.gc_bar_norm_bg, 1, &whole_window);
 
-   for (i = client_list.offset; i < client_list.size && xoff <= X.width; i++) {
-      gc_fg = i == client_list.curr ? X.gc_bar_curr_fg : X.gc_bar_norm_fg;
-      gc_bg = i == client_list.curr ? X.gc_bar_curr_bg : X.gc_bar_norm_bg;
+   for (i = clients.offset; i < clients.size && xoff <= X.width; i++) {
+      gc_fg = i == clients.curr ? X.gc_bar_curr_fg : X.gc_bar_norm_fg;
+      gc_bg = i == clients.curr ? X.gc_bar_curr_bg : X.gc_bar_norm_bg;
+      c = client_geti(i);
 
       if (asprintf(&num, "%zd: ", i) == -1)
-         err(1, "asprintf(3) num failed");
+         err(1, "%s: asprintf(3) num failed", __FUNCTION__);
 
       num_width = x_get_strwidth(num);
 
@@ -678,12 +751,12 @@ draw_bar()
                        X.bar_height - (X.font_descent + X.font_padding + 1),
                        num);
       xcb_image_text_8(X.connection,
-                       strlen(client_list.clients[i].name),
+                       strlen(client_get_name(c)),
                        X.tab,
                        gc_fg,
                        X.font_padding + 1 + num_width,
                        X.bar_height - (X.font_descent + X.font_padding + 1),
-                       client_list.clients[i].name);
+                       client_get_name(c));
       xcb_poly_rectangle(X.connection, X.tab, X.gc_bar_border, 1, &whole_tab);
       xcb_copy_area(X.connection, X.tab, X.bar, X.gc_bar_norm_bg,
          0, 0, xoff, 0, X.tab_width, X.bar_height);
@@ -728,7 +801,7 @@ int main(void)
    signal(SIGQUIT, signal_handler);
 
    x_init();
-   client_list_init();
+   clients_init();
    printf("%s\n", X.str_window);
 
    REDRAW = true;
@@ -766,7 +839,7 @@ int main(void)
       free(e);
    }
 
-   client_list_free();
+   clients_free();
    x_free();
    return 0;
 }
