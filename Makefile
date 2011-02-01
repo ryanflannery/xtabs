@@ -1,10 +1,10 @@
 
 CC?=/usr/bin/cc
-#CFLAGS+=-c -std=c89 -Wall -Wextra -Wno-unused-value -I/usr/X11R6/include
-CFLAGS+=-c -Wall -Wextra -I/usr/X11R6/include
+# NOTE: xcb does not conform to c89
+CFLAGS+=-c -std=c99 -Wall -Wextra -I/usr/X11R6/include
 LDFLAGS+=-L/usr/X11R6/lib -lxcb -lxcb-atom -lxcb-icccm
 
-OBJS=xtabs.o
+OBJS=clients.o events.o xtabs.o xutil.o
 
 xtabs: $(OBJS)
 	$(CC) -o $@ $(LDFLAGS) $(OBJS)
