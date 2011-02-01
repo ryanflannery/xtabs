@@ -75,6 +75,7 @@ typedef struct {
    uint16_t           font_ascent, font_descent;
    xcb_pixmap_t       bar;
    xcb_pixmap_t       tab;
+   xcb_font_t         font;
 
    xcb_gcontext_t     gc_bar_norm_fg, gc_bar_norm_bg;
    xcb_gcontext_t     gc_bar_curr_fg, gc_bar_curr_bg;
@@ -89,14 +90,13 @@ char* x_get_window_name(xcb_window_t w);
 void  x_set_window_name(char *name);
 xcb_alloc_color_reply_t*       x_load_color(uint16_t r, uint16_t g, uint16_t b);
 xcb_alloc_named_color_reply_t* x_load_strcolor(const char *name);
-xcb_gcontext_t                 x_load_gc(const char *fg, const char *bg, const char *font);
+xcb_gcontext_t                 x_load_gc(const char *fg, const char *bg);
 
 
 void
 x_init()
 {
    xcb_query_font_reply_t *font_reply;
-   xcb_font_t              font;
    uint32_t                mask;
    uint32_t                values[2];
    char                   *font_name = "fixed";
@@ -136,32 +136,31 @@ x_init()
       errx(1, "failed to asprintf(3) window id");
 
    /* load font */
-   font = xcb_generate_id(x.connection);
-   xcb_open_font(x.connection, font, strlen(font_name), font_name);
+   x.font = xcb_generate_id(x.connection);
+   xcb_open_font(x.connection, x.font, strlen(font_name), font_name);
 
    font_reply = xcb_query_font_reply(x.connection,
-         xcb_query_font(x.connection, font),
+         xcb_query_font(x.connection, x.font),
          NULL);
    x.font_ascent  = font_reply->font_ascent;
    x.font_descent = font_reply->font_descent;
    x.bar_height = x.font_ascent + x.font_descent;
-   xcb_close_font(x.connection, font);
 
    /* normal tab gc's */
    x.gc_bar_norm_fg = xcb_generate_id(x.connection);
    x.gc_bar_norm_bg = xcb_generate_id(x.connection);
-   x.gc_bar_norm_fg = x_load_gc("gray60", "gray9", font_name);
-   x.gc_bar_norm_bg = x_load_gc("gray9", "gray9", font_name);
+   x.gc_bar_norm_fg = x_load_gc("gray60", "gray9");
+   x.gc_bar_norm_bg = x_load_gc("gray9",  "gray9");
 
    /* current tab gc's */
    x.gc_bar_curr_fg = xcb_generate_id(x.connection);
    x.gc_bar_curr_bg = xcb_generate_id(x.connection);
-   x.gc_bar_curr_fg = x_load_gc("red", "black", font_name);
-   x.gc_bar_curr_bg = x_load_gc("black", "black", font_name);
+   x.gc_bar_curr_fg = x_load_gc("red",   "black");
+   x.gc_bar_curr_bg = x_load_gc("black", "black");
 
    /* border gc */
    x.gc_bar_border = xcb_generate_id(x.connection);
-   x.gc_bar_border = x_load_gc("black", "black", font_name);
+   x.gc_bar_border = x_load_gc("black", "black");
 
    /* bar & tab pixmap's */
    x.bar = xcb_generate_id(x.connection);
@@ -179,8 +178,7 @@ x_init()
 void
 x_free()
 {
-   /* TODO free font and other gc's here */
-   free(x.str_window);
+   xcb_close_font(x.connection, x.font);
    xcb_free_gc(x.connection, x.gc_bar_norm_fg);
    xcb_free_gc(x.connection, x.gc_bar_norm_bg);
    xcb_free_gc(x.connection, x.gc_bar_curr_fg);
@@ -190,6 +188,7 @@ x_free()
    xcb_free_pixmap(x.connection, x.tab);
    xcb_destroy_window(x.connection, x.window);
    xcb_disconnect(x.connection);
+   free(x.str_window);
 }
 
 xcb_alloc_color_reply_t*
@@ -221,33 +220,27 @@ x_load_strcolor(const char *name)
 }
 
 xcb_gcontext_t
-x_load_gc(const char *fg, const char *bg, const char *font_name)
+x_load_gc(const char *fg, const char *bg)
 {
    xcb_alloc_named_color_reply_t *color_fg, *color_bg;
    xcb_gcontext_t                 gc;
-   xcb_font_t                     font;
    uint32_t                       mask;
    uint32_t                       values[4];
 
    color_fg = x_load_strcolor(fg);
    color_bg = x_load_strcolor(bg);
 
-   font = xcb_generate_id(x.connection);
-   xcb_open_font(x.connection, font, strlen(font_name), font_name);
-
    gc = xcb_generate_id(x.connection);
    mask = XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT | XCB_GC_GRAPHICS_EXPOSURES;
    values[0] = color_fg->pixel;
    values[1] = color_bg->pixel;
-   values[2] = font;
+   values[2] = x.font;
    values[3] = 0;
 
    xcb_create_gc(x.connection, gc, x.screen->root, mask, values);
 
-   xcb_close_font(x.connection, font);
    free(color_fg);
    free(color_bg);
-
 
    return gc;
 }
