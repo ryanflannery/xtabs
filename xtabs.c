@@ -22,28 +22,32 @@
  *    3. figure out xembed stuff (?)
  *    4. create simple client api
  *    5. FIGURE OUT XCB ERROR HANDLING!  DAMNIT WHY ISN'T THIS DOCUMENTED!?!?
+ *    6. XXX figure out how xcb parses string/text-list atom values.
+ *           currently, my support for WM_COMMAND only works if it's a single
+ *           string, which is non-standard.
  */
 
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "session.h"
 #include "clients.h"
 #include "events.h"
 #include "xtabs.h"
 #include "xutil.h"
 
 volatile sig_atomic_t REDRAW = false;
+volatile sig_atomic_t SAVE_SESSION = false;
 volatile sig_atomic_t SIG_QUIT = 0;
 
 void signal_handler(int);
-void spawn();
 void draw_bar();
 
 void
-spawn()
+spawn(const char *cmd)
 {
-   const char *program = "/home/ryan/Downloads/vimprobable2/vimprobable/vimprobable2";
+   const char *program = "vimprobable2";
    const char *argv[] = { program, "-e", X.str_window, NULL};
 
    switch (fork()) {
@@ -51,7 +55,11 @@ spawn()
       err(1, "failed to fork");
    case 0:
       setsid();
-      execvp(program, (char**)argv);
+      if (cmd == NULL)
+         execvp(program, (char**)argv);
+      else
+         execvp(cmd, NULL);
+
       err(1, "failed to exec '%s'", program);
    }
 }

@@ -14,26 +14,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef EVENTS_H
-#define EVENTS_H
+#ifndef SESSION_H
+#define SESSION_H
 
-#include <xcb/xcb.h>
+#include <stdio.h>
 #include <err.h>
 
-#include "session.h"
 #include "clients.h"
 #include "xtabs.h"
-#include "xutil.h"
 
-void xevent_recv_buttonpress(xcb_button_press_event_t *e);
-void xevent_recv_configure_notify(xcb_configure_notify_event_t *e);
-void xevent_recv_create_notify(xcb_create_notify_event_t *e);
-void xevent_recv_destroy_notify(xcb_destroy_notify_event_t *e);
-void xevent_recv_keypress(xcb_key_press_event_t *e);
-void xevent_recv_property_notify(xcb_property_notify_event_t *e);
-
-void xevent_send_kill(xcb_window_t w);
-void xevent_send_raise(xcb_window_t w);
-void xevent_send_resize(xcb_window_t w);
+void session_load(const char *name);
+void session_save();
 
 #endif

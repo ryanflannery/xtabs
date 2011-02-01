@@ -117,7 +117,10 @@ xevent_recv_keypress(xcb_key_press_event_t *e)
       SIG_QUIT = 1;
       break;
    case 57: /* 'n' */
-      spawn();
+      spawn(NULL);
+      break;
+   case 25: /* 'w' */
+      session_save();
       break;
    }
 }
@@ -142,8 +145,8 @@ xevent_recv_property_notify(xcb_property_notify_event_t *e)
 
       REDRAW = true;
    } else if (e->atom == WM_COMMAND) {
-      /* TODO how the heck does xcb handle these?? */
-      printf("command: '%s'\n", x_get_command(e->window));fflush(stdout);
+      client_set_command(c, x_get_command(e->window));
+      printf("command: '%s'\n", client_get_command(c));fflush(stdout);
    }
 }
 
