@@ -666,10 +666,10 @@ printf("%s\n", x.str_window);
    while (!SIG_QUIT && (e = xcb_wait_for_event(x.connection))) {
 
       switch (e->response_type & ~0x80) {
-      case XCB_EXPOSE:    /* draw or redraw the window */
+      case XCB_EXPOSE:
          REDRAW = true;
          break;
-      case XCB_KEY_PRESS:  /* exit on key press */
+      case XCB_KEY_PRESS:
          xevent_recv_keypress((xcb_key_press_event_t*)e);
          break;
       case XCB_BUTTON_PRESS:
