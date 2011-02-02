@@ -77,6 +77,7 @@ void
 xevent_recv_destroy_notify(xcb_destroy_notify_event_t *e)
 {
    client_remove(e->window);
+   session_save();
    REDRAW = true;
 }
 
@@ -138,15 +139,23 @@ xevent_recv_property_notify(xcb_property_notify_event_t *e)
          c = i;
    }
 
+   /* Each if block after this should check for an atom type and return within
+    * the block
+    */
+
    if (e->atom == WM_NAME) {
       client_set_name(c, x_get_window_name(e->window));
       if (client_is_focused(c))
          x_set_window_name(client_get_name(c), X.window);
 
       REDRAW = true;
-   } else if (e->atom == WM_COMMAND) {
+      return;
+   }
+   
+   if (e->atom == WM_COMMAND) {
       client_set_command(c, x_get_command(e->window));
-      printf("command: '%s'\n", client_get_command(c));fflush(stdout);
+      session_save();
+      return;
    }
 }
 

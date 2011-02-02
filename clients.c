@@ -80,7 +80,6 @@ clients_free()
       if (c->name != NULL) free(c->command);
    }
 
-   xcb_flush(X.connection);
    free(clients.cs);
    clients.capacity = 0;
    clients.size = 0;
@@ -127,6 +126,7 @@ client_add(xcb_window_t w)
       if ((new_list = realloc(clients.cs, new_capacity)) == NULL)
          err(1, "%s: reallocation failed (%zd).", __FUNCTION__, new_capacity);
       clients.capacity = new_capacity;
+      clients.cs = new_list;
    }
 
    c = client_geti(clients.size++);

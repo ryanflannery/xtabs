@@ -104,18 +104,18 @@ x_init()
 void
 x_free()
 {
-   xcb_close_font(X.connection, X.font);
+   xcb_free_pixmap(X.connection, X.bar);
+   xcb_free_pixmap(X.connection, X.tab);
    xcb_free_gc(X.connection, X.gc_bar_norm_fg);
    xcb_free_gc(X.connection, X.gc_bar_norm_bg);
    xcb_free_gc(X.connection, X.gc_bar_curr_fg);
    xcb_free_gc(X.connection, X.gc_bar_curr_bg);
    xcb_free_gc(X.connection, X.gc_bar_border);
-   xcb_free_pixmap(X.connection, X.bar);
-   xcb_free_pixmap(X.connection, X.tab);
+   xcb_close_font(X.connection, X.font);
    xcb_destroy_window(X.connection, X.window);
+   xcb_flush(X.connection);
    xcb_disconnect(X.connection);
    free(X.str_window);
-   xcb_flush(X.connection);
 }
 
 void

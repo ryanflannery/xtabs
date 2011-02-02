@@ -36,7 +36,6 @@ session_load(const char *name)
 
    while (fgets(line, sizeof(line), f) != NULL) {
       line[strlen(line) - 1] = '\0';
-      printf("spawning: '%s'\n",line); fflush(stdout);
       spawn(line);
    }
 
@@ -53,7 +52,8 @@ session_save()
       err(1, "%s: failed to save session to '%s'.", __FUNCTION__, session_file);
 
    for (c = 0; c < clients_get_size(); c++) {
-      fprintf(f, "%s\n", client_get_command(c)); /* TODO check */
+      if (client_get_command(c) != NULL)
+         fprintf(f, "%s\n", client_get_command(c));
    }
 
    fclose(f);

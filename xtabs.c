@@ -18,7 +18,6 @@
  * TODO's
  * Major:
  *    1. figure out fatal IO error when exiting.
- *    2. add sessions
  *    3. figure out xembed stuff (?)
  *    4. create simple client api
  *    5. FIGURE OUT XCB ERROR HANDLING!  DAMNIT WHY ISN'T THIS DOCUMENTED!?!?
@@ -30,6 +29,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <err.h>
 
 #include "str2argv.h"
 #include "session.h"
@@ -39,34 +39,75 @@
 #include "xutil.h"
 
 volatile sig_atomic_t REDRAW = false;
-volatile sig_atomic_t SAVE_SESSION = false;
 volatile sig_atomic_t SIG_QUIT = 0;
 
 void  signal_handler(int);
 void  draw_bar();
 char *str_replace(const char *source, const char *old, const char *new);
 
-char*
-str_replace(const char *source, const char *old, const char *new)
+int main(int argc, char *argv[])
 {
-   char  *find;
-   char  *replaced;
-   size_t nsize, offset;
+   xcb_generic_event_t *e;
+   char *session_name;
 
-   if ((find = strstr(source, old)) == NULL)
-      return strdup(source);
+   if (argc > 2)
+      errx(1, "usage: %s [session-name]", argv[0]);
 
-   nsize = strlen(source) - strlen(old) + strlen(new) + 1;
-   if ((replaced = malloc(nsize)) == NULL)
-      err(1, "%s: malloc() failed", __FUNCTION__);
+   if (argc == 1)
+      session_name = "default";
+   else
+      session_name = argv[1];
 
-   strlcpy(replaced, source, find - source + 1);
-   offset = find - source;
-   strlcpy(replaced + offset, new, strlen(new) + 1);
-   offset += strlen(new);
-   strlcpy(replaced + offset, find + strlen(old), strlen(source) - (find - source) + strlen(old));
+   x_init();
+   clients_init();
+   session_load(session_name);
 
-   return replaced;
+   signal(SIGCHLD, signal_handler);
+   signal(SIGINT,  signal_handler);
+   signal(SIGHUP,  signal_handler);
+   signal(SIGQUIT, signal_handler);
+
+   REDRAW = true;
+   while (!SIG_QUIT && (e = xcb_wait_for_event(X.connection))) {
+      switch (e->response_type & ~0x80) {
+      case XCB_EXPOSE:
+         REDRAW = true;
+         break;
+      case XCB_KEY_PRESS:
+         xevent_recv_keypress((xcb_key_press_event_t*)e);
+         break;
+      case XCB_BUTTON_PRESS:
+         xevent_recv_buttonpress((xcb_button_press_event_t*)e);
+         break;
+      case XCB_CONFIGURE_NOTIFY:
+         xevent_recv_configure_notify((xcb_configure_notify_event_t*)e);
+         break;
+      case XCB_CREATE_NOTIFY:
+         xevent_recv_create_notify((xcb_create_notify_event_t*)e);
+         break;
+      case XCB_DESTROY_NOTIFY:
+         xevent_recv_destroy_notify((xcb_destroy_notify_event_t*)e);
+         break;
+      case XCB_PROPERTY_NOTIFY:
+         xevent_recv_property_notify((xcb_property_notify_event_t*)e);
+         break;
+      }
+
+      if (REDRAW) {
+         draw_bar();
+         xcb_flush(X.connection);
+         REDRAW = false;
+      }
+
+      free(e);
+   }
+
+   signal(SIGCHLD, SIG_DFL);
+
+   session_save();
+   clients_free();
+   x_free();
+   return 0;
 }
 
 void
@@ -85,6 +126,8 @@ spawn(char *cmd)
       return;
    }
 
+   /* Child Process ... */
+
    if (cmd == NULL)
       asprintf(&cmd, "vimprobable2 -e %s", X.str_window);
    else
@@ -98,6 +141,21 @@ spawn(char *cmd)
    err(1, "failed to exec '%s'", cmd);
 }
 
+void
+signal_handler(int sig)
+{
+   switch (sig) {
+   case SIGHUP:
+   case SIGINT:
+   case SIGQUIT:
+      SIG_QUIT = 1;
+      break;
+   case SIGCHLD:
+      while(0 < waitpid(-1, NULL, WNOHANG));
+      break;
+   }
+}
+ 
 void
 draw_bar()
 {
@@ -162,71 +220,25 @@ draw_bar()
       0, 0, 0, 0, X.width, X.height);
 }
 
-void
-signal_handler(int sig)
+char*
+str_replace(const char *source, const char *old, const char *new)
 {
-   switch (sig) {
-   case SIGHUP:
-   case SIGINT:
-   case SIGQUIT:
-      SIG_QUIT = 1;
-      break;
-   case SIGCHLD:
-      while(0 < waitpid(-1, NULL, WNOHANG));
-      break;
-   }
-}
- 
-int main(void)
-{
-   xcb_generic_event_t *e;
+   char  *find;
+   char  *replaced;
+   size_t nsize, offset;
 
-   signal(SIGCHLD, signal_handler);
-   signal(SIGHUP,  signal_handler);
-   signal(SIGINT,  signal_handler);
-   signal(SIGQUIT, signal_handler);
+   if ((find = strstr(source, old)) == NULL)
+      return strdup(source);
 
-   x_init();
-   clients_init();
-   printf("%s\n", X.str_window);
-   session_load("default");
+   nsize = strlen(source) - strlen(old) + strlen(new) + 1;
+   if ((replaced = malloc(nsize)) == NULL)
+      err(1, "%s: malloc() failed", __FUNCTION__);
 
-   REDRAW = true;
-   while (!SIG_QUIT && (e = xcb_wait_for_event(X.connection))) {
+   strlcpy(replaced, source, find - source + 1);
+   offset = find - source;
+   strlcpy(replaced + offset, new, strlen(new) + 1);
+   offset += strlen(new);
+   strlcpy(replaced + offset, find + strlen(old), strlen(source) - (find - source) + strlen(old));
 
-      switch (e->response_type & ~0x80) {
-      case XCB_EXPOSE:
-         REDRAW = true;
-         break;
-      case XCB_KEY_PRESS:
-         xevent_recv_keypress((xcb_key_press_event_t*)e);
-         break;
-      case XCB_BUTTON_PRESS:
-         xevent_recv_buttonpress((xcb_button_press_event_t*)e);
-         break;
-      case XCB_CONFIGURE_NOTIFY:
-         xevent_recv_configure_notify((xcb_configure_notify_event_t*)e);
-         break;
-      case XCB_CREATE_NOTIFY:
-         xevent_recv_create_notify((xcb_create_notify_event_t*)e);
-         break;
-      case XCB_DESTROY_NOTIFY:
-         xevent_recv_destroy_notify((xcb_destroy_notify_event_t*)e);
-         break;
-      case XCB_PROPERTY_NOTIFY:
-         xevent_recv_property_notify((xcb_property_notify_event_t*)e);
-         break;
-      }
-
-      if (REDRAW) {
-         draw_bar();
-         xcb_flush(X.connection);
-         REDRAW = false;
-      }
-      free(e);
-   }
-
-   clients_free();
-   x_free();
-   return 0;
+   return replaced;
 }

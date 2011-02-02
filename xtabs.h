@@ -18,7 +18,6 @@
 #define XTABS_H
 
 extern volatile sig_atomic_t REDRAW;
-extern volatile sig_atomic_t SAVE_SESSION;
 extern volatile sig_atomic_t SIG_QUIT;
 
 void spawn(char *cmd);

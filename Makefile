@@ -13,4 +13,6 @@ xtabs: $(OBJS)
 	$(CC) $(CFLAGS) $<
 
 clean:
-	rm -f xtabs $(OBJS)
+	rm -f $(OBJS)
+	rm -f xtabs
+	rm -f xtabs.core
