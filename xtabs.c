@@ -17,7 +17,6 @@
 /*
  * TODO's
  * Major:
- *    0. clicking outside of tabs selects the first tab
  *    1. figure out fatal IO error when exiting.
  *    3. figure out xembed stuff (?)
  *    4. create simple client api
