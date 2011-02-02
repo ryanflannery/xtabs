@@ -21,8 +21,6 @@ xevent_recv_buttonpress(xcb_button_press_event_t *e)
 {
    size_t i, c = 0;
 
-   if (SIG_QUIT) return;
-
    if ((int32_t)e->event_y > (int32_t) X.bar_height)
       return;
 
@@ -43,8 +41,6 @@ xevent_recv_buttonpress(xcb_button_press_event_t *e)
 void
 xevent_recv_configure_notify(xcb_configure_notify_event_t *e)
 {
-   if (SIG_QUIT) return;
-
    if (e->window == X.window) {
       X.width  = e->width;
       X.height = e->height;
@@ -65,8 +61,6 @@ xevent_recv_create_notify(xcb_create_notify_event_t *e)
    uint32_t values[1] = { XCB_EVENT_MASK_PROPERTY_CHANGE };
    size_t   c;
 
-   if (SIG_QUIT) return;
-
    if (e->window != X.window) {
       xcb_unmap_window(X.connection, e->window);
       xcb_reparent_window(X.connection, e->window, X.window, 0, X.bar_height);
@@ -82,8 +76,6 @@ xevent_recv_create_notify(xcb_create_notify_event_t *e)
 void
 xevent_recv_destroy_notify(xcb_destroy_notify_event_t *e)
 {
-   if (SIG_QUIT) return;
-
    client_remove(e->window);
    session_save();
    REDRAW = true;
@@ -92,8 +84,6 @@ xevent_recv_destroy_notify(xcb_destroy_notify_event_t *e)
 void
 xevent_recv_keypress(xcb_key_press_event_t *e)
 {
-   if (SIG_QUIT) return;
-
    /* TODO Still need to figure out keysym's in xcb. */
    const char *MODIFIERS[] = {
       "Shift", "Lock", "Ctrl", "Alt",
@@ -140,8 +130,6 @@ void
 xevent_recv_property_notify(xcb_property_notify_event_t *e)
 {
    size_t i, c = 0;
-
-   if (SIG_QUIT) return;
 
    if (X.window == e->window || (e->atom != WM_NAME && e->atom != WM_COMMAND))
       return;

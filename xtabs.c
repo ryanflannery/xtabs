@@ -17,6 +17,7 @@
 /*
  * TODO's
  * Major:
+ *    0. clicking outside of tabs selects the first tab
  *    1. figure out fatal IO error when exiting.
  *    3. figure out xembed stuff (?)
  *    4. create simple client api
@@ -68,7 +69,10 @@ int main(int argc, char *argv[])
    signal(SIGQUIT, signal_handler);
 
    REDRAW = true;
-   while (!SIG_QUIT && (e = xcb_wait_for_event(X.connection))) {
+   while (!SIG_QUIT) {
+      e = xcb_wait_for_event(X.connection);
+      if (SIG_QUIT) break;
+
       switch (e->response_type & ~0x80) {
       case XCB_EXPOSE:
          REDRAW = true;
@@ -101,8 +105,6 @@ int main(int argc, char *argv[])
 
       free(e);
    }
-
-   signal(SIGCHLD, SIG_DFL);
 
    session_save();
    clients_free();
