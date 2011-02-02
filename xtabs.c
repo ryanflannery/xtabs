@@ -31,6 +31,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "str2argv.h"
 #include "session.h"
 #include "clients.h"
 #include "events.h"
@@ -41,27 +42,60 @@ volatile sig_atomic_t REDRAW = false;
 volatile sig_atomic_t SAVE_SESSION = false;
 volatile sig_atomic_t SIG_QUIT = 0;
 
-void signal_handler(int);
-void draw_bar();
+void  signal_handler(int);
+void  draw_bar();
+char *str_replace(const char *source, const char *old, const char *new);
+
+char*
+str_replace(const char *source, const char *old, const char *new)
+{
+   char  *find;
+   char  *replaced;
+   size_t nsize, offset;
+
+   if ((find = strstr(source, old)) == NULL)
+      return strdup(source);
+
+   nsize = strlen(source) - strlen(old) + strlen(new) + 1;
+   if ((replaced = malloc(nsize)) == NULL)
+      err(1, "%s: malloc() failed", __FUNCTION__);
+
+   strlcpy(replaced, source, find - source + 1);
+   offset = find - source;
+   strlcpy(replaced + offset, new, strlen(new) + 1);
+   offset += strlen(new);
+   strlcpy(replaced + offset, find + strlen(old), strlen(source) - (find - source) + strlen(old));
+
+   return replaced;
+}
 
 void
-spawn(const char *cmd)
+spawn(char *cmd)
 {
-   const char *program = "vimprobable2";
-   const char *argv[] = { program, "-e", X.str_window, NULL};
+   const char *e;
+   char      **argv;
+   int         argc;
 
    switch (fork()) {
    case -1:
-      err(1, "failed to fork");
+      err(1, "%s: failed to fork()", __FUNCTION__);
    case 0:
-      setsid();
-      if (cmd == NULL)
-         execvp(program, (char**)argv);
-      else
-         execvp(cmd, NULL);
-
-      err(1, "failed to exec '%s'", program);
+      break;
+   default:
+      return;
    }
+
+   if (cmd == NULL)
+      asprintf(&cmd, "vimprobable2 -e %s", X.str_window);
+   else
+      cmd = str_replace(cmd, "WINID", X.str_window);
+
+   if (str2argv(cmd, &argc, &argv, &e) != 0)
+      errx(1, "%s: str2argv failed on '%s': %s", __FUNCTION__, cmd, e);
+
+   setsid();
+   execvp(argv[0], (char**)argv);
+   err(1, "failed to exec '%s'", cmd);
 }
 
 void
@@ -155,6 +189,7 @@ int main(void)
    x_init();
    clients_init();
    printf("%s\n", X.str_window);
+   session_load("default");
 
    REDRAW = true;
    while (!SIG_QUIT && (e = xcb_wait_for_event(X.connection))) {

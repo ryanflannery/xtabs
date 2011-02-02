@@ -22,8 +22,7 @@ void
 session_load(const char *name)
 {
    FILE  *f;
-   char  *line;
-   size_t len;
+   char   line[2000];
 
    /* TODO this will be a setting.
     * TODO create dir if not exist
@@ -35,8 +34,9 @@ session_load(const char *name)
    if ((f = fopen(session_file, "r")) == NULL)
       return;
 
-   while ((line = fgetln(f, &len)) != NULL) {
-      line[len] = '\0';
+   while (fgets(line, sizeof(line), f) != NULL) {
+      line[strlen(line) - 1] = '\0';
+      printf("spawning: '%s'\n",line); fflush(stdout);
       spawn(line);
    }
 
