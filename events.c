@@ -16,22 +16,28 @@
 
 #include "events.h"
 
+bool
+rectangle_contains(int rx, int ry, int rw, int rh, int x, int y)
+{
+   return (rx <= x && x <= rx + rw) && (ry <= y && y <= ry + rh);
+}
+
 void
 xevent_recv_buttonpress(xcb_button_press_event_t *e)
 {
-   size_t i, c = 0;
+   size_t i;
+   int    rx,ry,rw,rh;
 
-   if ((int32_t)e->event_y > (int32_t) X.bar_height)
+   if ((int)e->event_y > (int)X.bar_height)
       return;
 
    for (i = clients_get_offset(); i < clients_get_size(); i++) {
-      if ((int32_t)e->event_x < (int32_t)((i - clients_get_offset() + 1) * X.tab_width)) {
-         c = i;
-         break;
-      }
+      rx = i * X.tab_width;   ry = 0;
+      rw = X.tab_width;       rh = X.bar_height;
+      if (rectangle_contains(rx,ry,rw,rh,e->event_x,e->event_y))
+         client_focus(i);
    }
 
-   client_focus(c);
    /* TODO: figure out why e->state is always 0.
     * TODO: eventually, right-click should close a window.
     * TODO: also remove hideous casting above
