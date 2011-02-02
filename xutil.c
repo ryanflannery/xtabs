@@ -113,7 +113,6 @@ x_free()
    xcb_free_gc(X.connection, X.gc_bar_border);
    xcb_close_font(X.connection, X.font);
    xcb_destroy_window(X.connection, X.window);
-   xcb_flush(X.connection);
    xcb_disconnect(X.connection);
    free(X.str_window);
 }
